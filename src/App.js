@@ -4,12 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet-draw/dist/leaflet.draw.css';
 import 'leaflet-draw';
-
-/*
-Below is the main Leaflet map code. 
-I've replaced references to Card, CardContent, and shadcn/ui's Button 
-with basic HTML tags and inline styles for simplicity. 
-*/
+import axios from 'axios';
 
 export default function AerialMapApp() {
   const mapRef = useRef(null);
@@ -239,23 +234,56 @@ export default function AerialMapApp() {
     setSelectedPolygonId(null);
   }
 
-  // Mock ChatGPT search
-  function handleSearchBusinesses(polyId) {
+  // OpenAI API search for businesses
+  async function handleSearchBusinesses(polyId) {
     const polygon = polygons.find((p) => p.id === polyId);
     if (!polygon) return;
+
     const address = polygon.address || 'Unknown';
-    const mockResults = simulateChatGPTSearchForBusinesses(address);
-    setPolygons((prev) =>
-      prev.map((p) => (p.id === polyId ? { ...p, businesses: mockResults } : p))
-    );
+    
+    try {
+      // Call the actual ChatGPT API to fetch business recommendations
+      const businesses = await fetchBusinessRecommendations(address);
+      
+      // Update the polygon data with the retrieved businesses
+      setPolygons((prev) =>
+        prev.map((p) => (p.id === polyId ? { ...p, businesses } : p))
+      );
+    } catch (error) {
+      console.error('Error fetching businesses:', error);
+    }
   }
 
-  function simulateChatGPTSearchForBusinesses(address) {
-    return [
-      `Business near ${address} #1`,
-      `Business near ${address} #2`,
-      `Business near ${address} #3`,
-    ];
+  // Function to call the OpenAI API
+  async function fetchBusinessRecommendations(address) {
+    const apiKey = 'YOUR_API_KEY'; // Replace with your API key
+    const url = 'https://api.openai.com/v1/completions';
+
+    try {
+      const response = await axios.post(url, {
+        model: 'gpt-3.5-turbo',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful assistant.',
+          },
+          {
+            role: 'user',
+            content: `Provide a list of businesses near ${address}`,
+          },
+        ],
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      // Assuming response.data.choices[0].message contains the result
+      return response.data.choices[0].message.content.split('\n');
+    } catch (error) {
+      console.error('Error with API request:', error);
+      return ['No businesses found.'];
+    }
   }
 
   // Filter tenants & find polygon
@@ -379,7 +407,7 @@ export default function AerialMapApp() {
   );
 }
 
-/** Editable name cell for polygons */
+// Editable name cell for polygons
 function EditableNameCell({ name, onChange }) {
   const [editing, setEditing] = useState(false);
   const [tempName, setTempName] = useState(name);
@@ -436,7 +464,7 @@ function EditableNameCell({ name, onChange }) {
   );
 }
 
-/** Editable address cell for polygons */
+// Editable address cell for polygons
 function EditableAddressCell({ address, onChange }) {
   const [editing, setEditing] = useState(false);
   const [tempAddress, setTempAddress] = useState(address);
@@ -539,148 +567,6 @@ function TenantRecords({ polygonId, tenants, onClose, onAddTenant }) {
         >
           Add
         </button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * ShapeSubdivisionPanel:
- * - We receive subSpaces from the parent, which is stored in a global array: { id, polygonId, occupantTenantId, size }.
- * - We only display + edit subSpaces belonging to this polygon.
- * - For each occupantTenantId in this polygon, we show an input for size.
- * - onUpdateSubSpace(polygonId, occupantTenantId, sizeVal) will update or create the record in parent's state.
- */
-function ShapeSubdivisionPanel({ polygon, tenants, subSpaces, onUpdateSubSpace }) {
-  const [dimension, setDimension] = useState('horizontal');
-
-  const polygonAreaSqFt = computePolygonAreaSqFt(polygon.layer.getLatLngs()[0] || []);
-
-  // We'll gather occupant subSpaces from the parent's data.
-  // For each occupant (tenant), we look for a subSpace record.
-  // If not found, we show 0.
-  const occupantSubSpaces = tenants.map((t) => {
-    const existing = subSpaces.find(
-      (s) => s.polygonId === polygon.id && s.occupantTenantId === t.tenantId
-    );
-    return {
-      occupantTenantId: t.tenantId,
-      size: existing ? parseFloat(existing.size) || 0 : 0,
-    };
-  });
-
-  // Calculate allocated + leftover.
-  const allocated = occupantSubSpaces.reduce((acc, s) => acc + (parseFloat(s.size) || 0), 0);
-  const remaining = polygonAreaSqFt - allocated;
-
-  // Generate subPaths.
-  const latlngs = polygon.layer.getLatLngs()[0] || [];
-  const points = latlngsToPointsWithMargin(latlngs, 10);
-  const boundingRect = getBoundingRect(points);
-
-  // Build an array to pass to buildSizedSubPaths.
-  // Must combine occupantSubSpaces with occupantTenantId.
-  const occupantDataForPaths = occupantSubSpaces.map((o) => ({
-    occupantTenantId: o.occupantTenantId,
-    size: o.size,
-  }));
-  const subPaths = buildSizedSubPaths(boundingRect, occupantDataForPaths, dimension, polygonAreaSqFt);
-
-  function handleSizeChange(occupantTenantId, val) {
-    onUpdateSubSpace(polygon.id, occupantTenantId, parseFloat(val) || 0);
-  }
-
-  return (
-    <div>
-      <h2 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '8px' }}>Shape &amp; Subdivision</h2>
-      <div style={{ marginBottom: '8px' }}>
-        <p style={{ margin: 0, color: '#333' }}>
-          <strong>Approx. Polygon Area:</strong> {polygonAreaSqFt.toFixed(2)} sq ft
-        </p>
-        <p style={{ margin: 0, color: '#333' }}>
-          <strong>Remaining to Allocate:</strong> {remaining.toFixed(2)} sq ft
-        </p>
-      </div>
-
-      <div style={{ marginBottom: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-        <span style={{ fontWeight: 'bold' }}>Split Dimension:</span>
-        <button
-          style={{
-            padding: '4px 8px',
-            border: `1px solid ${dimension === 'horizontal' ? '#333' : '#aaa'}`,
-            borderRadius: '4px',
-            backgroundColor: dimension === 'horizontal' ? '#e0e0e0' : 'white',
-            cursor: 'pointer',
-          }}
-          onClick={() => setDimension('horizontal')}
-        >
-          Horizontal
-        </button>
-        <button
-          style={{
-            padding: '4px 8px',
-            border: `1px solid ${dimension === 'vertical' ? '#333' : '#aaa'}`,
-            borderRadius: '4px',
-            backgroundColor: dimension === 'vertical' ? '#e0e0e0' : 'white',
-            cursor: 'pointer',
-          }}
-          onClick={() => setDimension('vertical')}
-        >
-          Vertical
-        </button>
-      </div>
-
-      {occupantSubSpaces.length === 0 ? (
-        <p style={{ color: '#666' }}>No tenants ⇒ no sub-spaces.</p>
-      ) : (
-        <div style={{ marginBottom: '8px' }}>
-          {occupantSubSpaces.map((space, i) => {
-            const occupant = tenants.find((t) => t.tenantId === space.occupantTenantId)?.name || '';
-            return (
-              <div key={i} style={{ marginBottom: '4px' }}>
-                <span>
-                  <strong>{occupant || `Sub-Space ${i + 1}`}</strong> size (sq ft):
-                </span>
-                <input
-                  type="number"
-                  step="0.01"
-                  style={{ marginLeft: '8px', border: '1px solid #aaa', borderRadius: '4px', padding: '4px', width: '80px' }}
-                  value={space.size}
-                  onChange={(e) => handleSizeChange(space.occupantTenantId, e.target.value)}
-                />
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div style={{ border: '1px solid #ccc', padding: '8px', borderRadius: '4px' }}>
-        <h3 style={{ margin: 0, marginBottom: '8px' }}>Polygon Preview (Box-based slicing)</h3>
-        <svg
-          viewBox="0 0 200 200"
-          width="200"
-          height="200"
-          style={{ border: '1px solid #999', background: '#f8fafc' }}
-        >
-          <rect
-            x={boundingRect.x}
-            y={boundingRect.y}
-            width={boundingRect.w}
-            height={boundingRect.h}
-            fill="#f2f2f2"
-            stroke="#999"
-            strokeWidth="1"
-          />
-          {subPaths.map((path, idx) => (
-            <path
-              key={idx}
-              d={path}
-              fill={idx % 2 === 0 ? '#cce5ff' : '#ffddaa'}
-              stroke="#004085"
-              strokeWidth="1"
-            />
-          ))}
-        </svg>
       </div>
     </div>
   );
