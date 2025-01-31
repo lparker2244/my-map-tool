@@ -256,7 +256,7 @@ export default function AerialMapApp() {
 
   // Function to call the OpenAI API
   async function fetchBusinessRecommendations(address) {
-    const apiKey = 'YOUR_API_KEY'; // Replace with your API key
+    const apiKey = process.env.REACT_APP_OPENAI_KEY; // Replace with your API key
     const url = 'https://api.openai.com/v1/completions';
 
     try {
