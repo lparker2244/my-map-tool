@@ -685,6 +685,9 @@ function latlngsToPointsWithMargin(latlngs, margin) {
     return { x, y };
   });
 }
+function ShapeSubdivisionPanel({ polygon, tenants, subSpaces, onUpdateSubSpace }) {
+  return <div>Shape Subdivision Panel</div>;
+}
 
 function latlngsToPoints(latlngs) {
   return latlngs.map((ll) => ({ x: ll.lng, y: ll.lat }));
