@@ -269,7 +269,7 @@ export default function AerialMapApp() {
           },
           {
             role: 'user',
-            content: `Provide a list of businesses near ${address}`,
+            content: `Please search the internet and provide a list of businesses near the address: ${address}. Format the response as a list, one business per line.`,
           },
         ],
         headers: {
